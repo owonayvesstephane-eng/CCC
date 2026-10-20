@@ -1,0 +1,69 @@
+name: Build BATIX APK Automatique (Full HD)
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Récupération du code sur GitHub
+        uses: actions/checkout@v4
+
+      - name: 2. Installation de Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 3. Installation de Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: 4. Création de la structure Android si absente
+        run: |
+          cp lib/main.dart /tmp/main.dart.bak
+          cp pubspec.yaml /tmp/pubspec.yaml.bak
+          if [ ! -d "android" ]; then
+            flutter create --project-name batix_app --org com.batix.app .
+          fi
+          cp /tmp/main.dart.bak lib/main.dart
+          cp /tmp/pubspec.yaml.bak pubspec.yaml
+          # Renomme l'application en "BATIX" sur l'écran du téléphone
+          sed -i 's/android:label="[^"]*"/android:label="BATIX"/g' android/app/src/main/AndroidManifest.xml
+
+      - name: 5. Vérification des ressources HD et de l'icône APK (Logo seul SANS texte BATIX)
+        run: |
+          mkdir -p assets/batix
+          if [ ! -f "assets/batix/apk_icon_only_logo.png" ]; then
+            echo "Génération de secours de l'icône HD si absente..."
+            python3 -m pip install Pillow
+            python3 -c '
+            import os
+            from PIL import Image, ImageDraw
+            os.makedirs("assets/batix", exist_ok=True)
+            ic = Image.new("RGBA", (1024, 1024), (6, 20, 29, 255))
+            d = ImageDraw.Draw(ic)
+            d.ellipse((112, 112, 912, 912), fill=(16, 185, 129, 255), outline=(245, 158, 11, 255), width=28)
+            ic.save("assets/batix/apk_icon_only_logo.png", "PNG")
+            '
+          else
+            echo "Toutes les ressources HD et apk_icon_only_logo.png sont déjà présentes dans assets/batix/ !"
+          fi
+          ls -lh assets/batix/
+
+      - name: 6. Application de l'icône APK HD et compilation Flutter
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
+          flutter build apk --release
+
+      - name: 7. Publication de l'APK prêt à télécharger
+        uses: actions/upload-artifact@v4
+        with:
+          name: BATIX-APK-Release
+          path: build/app/outputs/flutter-apk/app-release.apk
